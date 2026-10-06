@@ -1,36 +1,101 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Mobile Release Dashboard
 
-## Getting Started
+Self-hosted control panel that automates the weekly release cycle for your mobile projects:
+**bump version → commit & push → build → sign → upload to Google Play**.
 
-First, run the development server:
+Supports **Android Native (Kotlin/Gradle)** and **Flutter (Android)**. iOS/TestFlight is on the roadmap via GitHub Actions macOS runners (the dashboard triggers and monitors the workflow).
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Architecture
+
+One repo, two services, one shared SQLite volume — deploys as a `docker-compose` stack on Dokploy.
+
+```
+┌────────────┐        ┌─────────────────────────────────────────┐
+│    web     │        │                worker                    │
+│  Next.js   │  HTTP  │  scheduler (cron)  ── enqueue due runs   │
+│  dashboard │───────▶│  executor (serial) ── git → bump →       │
+│  :3000     │ SQLite │      build → sign → fastlane supply      │
+└────────────┘        └─────────────────────────────────────────┘
+        └── shared volume /data (db, logs, workspaces, keystores, gradle cache)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- **web** — Next.js dashboard: project registry, signing profiles, secrets, run history with live logs, manual "Run now".
+- **worker** — same codebase (`src/worker`), heavyweight image with JDK 17 + Android SDK + Flutter + fastlane. Polls the run queue every 15s, **concurrency 1** (small VPS friendly), writes per-run logs.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## The pipeline
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Each run executes these stages (visible per-run on the dashboard):
 
-## Learn More
+| Stage | What happens |
+|---|---|
+| `prepare` | Clone (or fetch + hard reset) the repo into `data/workspaces/<id>` |
+| `bump` | `versionCode` +1 and `versionName` per scheme in `app/build.gradle[.kts]` — or `version: x.y.z+build` in `pubspec.yaml` for Flutter |
+| `commit_push` | `chore(release): bump vX.Y.Z (N)` → push via GitHub PAT |
+| `build` | `./gradlew bundleRelease` (configurable task) or `flutter build appbundle` — signing injected via a Gradle init script, **no repo changes needed** |
+| `upload` | `fastlane supply` → chosen Play track with your service account |
 
-To learn more about Next.js, take a look at the following resources:
+### Signing without touching your repo
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The worker writes `$GRADLE_USER_HOME/init.d/mrd-signing.gradle` for the duration of a build, which force-sets `buildTypes.release.signingConfig` from your keystore (kept in `data/keystores`, encrypted credentials in the DB). Keystores and passwords never enter the repo or build logs.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Quick start
 
-## Deploy on Vercel
+### Docker (production / Dokploy)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+cp .env.example .env   # set DASHBOARD_PASSWORD + DASHBOARD_MASTER_KEY
+docker compose up -d --build
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Then open `http://<host>:3000`. On Dokploy: create a **Compose** app pointing at this repo, add the env vars, done. Persist the `data` volume.
+
+### Local dev
+
+```bash
+cp .env.example .env
+export $(cat .env | xargs)
+npm install
+npm run dev            # dashboard on :3000
+npm run worker         # separate terminal — needs JDK/Android SDK/Flutter for real builds
+```
+
+## Configuration
+
+### Environment variables
+
+| Var | Required | Purpose |
+|---|---|---|
+| `DASHBOARD_PASSWORD` | | Login password. Empty = auth disabled (dev only) |
+| `DASHBOARD_MASTER_KEY` | ✓ | AES-256-GCM key for secrets at rest. Keep stable, losing it = losing secrets |
+| `DATA_DIR` | | Default `./data` (docker: `/data`) |
+| `TZ` | | Worker cron timezone, e.g. `Asia/Ho_Chi_Minh` |
+
+### Secrets page (in-app)
+
+1. **GitHub PAT** — `repo` scope, used for clone + push.
+2. **Signing profiles** — upload `.jks/.keystore` + alias + passwords.
+3. **Service accounts** — Google Play JSON key (Play Console → Setup → API access, grant release permission). The app must already exist on Play Console — first upload can't be automated.
+
+### Per-project fields
+
+| Field | Notes |
+|---|---|
+| Type | `android-kotlin` or `flutter` |
+| Version scheme | `patch` (x.y.z+1) · `minor` · `major` · `build-only` |
+| Gradle file / task | Auto-detected (`app/build.gradle.kts`, `bundleRelease`) — override if non-standard |
+| Signing profile | Optional — repo defaults used if unset |
+| Release target | Play `internal`/`alpha`/`beta`/`production`, or `none` (build only) |
+| Package name | `applicationId` — required for Play upload |
+| Schedule | 5-field cron in worker `TZ`, e.g. `0 9 * * 1` = Mondays 09:00 |
+
+## Roadmap
+
+- **P1 (this)**: Android-Kotlin end-to-end + manual runs + logs
+- **P2**: Flutter Android + notifications (Telegram)
+- **P3**: iOS → TestFlight via `workflow_dispatch` to a `macos-latest` GitHub Actions job in each app repo (App Store Connect API key already accepted on the secrets page)
+
+## Security notes
+
+- Secrets are AES-256-GCM encrypted at rest (`DASHBOARD_MASTER_KEY`), decrypted only into per-run temp files and wiped afterwards.
+- The PAT is passed to git via `http.extraheader` per-invocation — never persisted to `.git/config`.
+- Single-user auth by design; put it behind a private network (Tailscale) or a strong password + HTTPS.

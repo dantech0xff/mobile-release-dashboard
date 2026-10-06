@@ -1,69 +1,138 @@
-import Image from "next/image";
+import Link from "next/link";
+import { getDb, Project, Run } from "@/lib/db";
+import { triggerRun } from "./actions";
+import { StatusBadge } from "./ui";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+type Row = Project & { last_status: string | null; last_run_id: number | null };
+
+export default function Dashboard() {
+  const db = getDb();
+  const projects = db
+    .prepare(
+      `SELECT p.*, r.status AS last_status, r.id AS last_run_id
+       FROM projects p
+       LEFT JOIN runs r ON r.id = (SELECT id FROM runs WHERE project_id = p.id ORDER BY id DESC LIMIT 1)
+       ORDER BY p.id`
+    )
+    .all() as Row[];
+  const recent = db
+    .prepare(
+      `SELECT r.*, p.name AS project_name FROM runs r JOIN projects p ON p.id = r.project_id
+       ORDER BY r.id DESC LIMIT 10`
+    )
+    .all() as (Run & { project_name: string })[];
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">Projects</h1>
+        <Link href="/projects/new" className="btn">
+          + New project
+        </Link>
+      </div>
+
+      <div className="card overflow-x-auto">
+        {projects.length === 0 ? (
+          <p className="text-sm text-zinc-500">
+            No projects yet. Add one to start automating releases.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-zinc-500">
+                <th className="pb-2">Name</th>
+                <th className="pb-2">Type</th>
+                <th className="pb-2">Schedule</th>
+                <th className="pb-2">Next run</th>
+                <th className="pb-2">Last run</th>
+                <th className="pb-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {projects.map((p) => (
+                <tr key={p.id} className="border-t border-zinc-800">
+                  <td className="py-2">
+                    <Link href={`/projects/${p.id}`} className="font-medium hover:underline">
+                      {p.name}
+                    </Link>
+                    <div className="text-xs text-zinc-500">{p.repo_url}</div>
+                  </td>
+                  <td className="py-2 text-zinc-400">{p.type}</td>
+                  <td className="py-2 text-zinc-400">
+                    {p.schedule_enabled ? p.schedule_cron || "—" : "off"}
+                  </td>
+                  <td className="py-2 text-zinc-400">
+                    {p.schedule_enabled && p.next_run_at
+                      ? new Date(p.next_run_at).toLocaleString()
+                      : "—"}
+                  </td>
+                  <td className="py-2">
+                    {p.last_run_id ? (
+                      <Link href={`/runs/${p.last_run_id}`}>
+                        <StatusBadge status={p.last_status || "queued"} />
+                      </Link>
+                    ) : (
+                      <span className="text-zinc-600">never</span>
+                    )}
+                  </td>
+                  <td className="py-2 text-right">
+                    <form action={triggerRun}>
+                      <input type="hidden" name="project_id" value={p.id} />
+                      <button className="btn-secondary" type="submit">
+                        Run now
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <h2 className="text-lg font-semibold">Recent runs</h2>
+      <div className="card overflow-x-auto">
+        {recent.length === 0 ? (
+          <p className="text-sm text-zinc-500">No runs yet.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-zinc-500">
+                <th className="pb-2">Run</th>
+                <th className="pb-2">Project</th>
+                <th className="pb-2">Trigger</th>
+                <th className="pb-2">Status</th>
+                <th className="pb-2">Stage</th>
+                <th className="pb-2">Version</th>
+                <th className="pb-2">Finished</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recent.map((r) => (
+                <tr key={r.id} className="border-t border-zinc-800">
+                  <td className="py-2">
+                    <Link href={`/runs/${r.id}`} className="text-blue-400 hover:underline">
+                      #{r.id}
+                    </Link>
+                  </td>
+                  <td className="py-2">{r.project_name}</td>
+                  <td className="py-2 text-zinc-400">{r.trigger_type}</td>
+                  <td className="py-2">
+                    <StatusBadge status={r.status} />
+                  </td>
+                  <td className="py-2 text-zinc-400">{r.stage || "—"}</td>
+                  <td className="py-2 text-zinc-400">{r.version_after || "—"}</td>
+                  <td className="py-2 text-zinc-400">
+                    {r.finished_at ? new Date(r.finished_at + "Z").toLocaleString() : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

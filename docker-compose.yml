@@ -1,0 +1,29 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "3000:3000"
+    environment:
+      DATA_DIR: /data
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
+      DASHBOARD_MASTER_KEY: ${DASHBOARD_MASTER_KEY}
+    volumes:
+      - data:/data
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      DATA_DIR: /data
+      DASHBOARD_MASTER_KEY: ${DASHBOARD_MASTER_KEY}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - data:/data
+    restart: unless-stopped
+
+volumes:
+  data:
