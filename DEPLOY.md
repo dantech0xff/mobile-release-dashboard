@@ -12,9 +12,9 @@ Deploy `mobile-release-dashboard` lên VPS Dokploy của bạn trong ~15 phút.
    |---|---|
    | `DASHBOARD_PASSWORD` | mật khẩu login dashboard |
    | `DASHBOARD_MASTER_KEY` | chuỗi random dài — **sinh 1 lần, giữ nguyên mãi mãi** (`openssl rand -hex 32`). Đổi/mất key = mất toàn bộ secrets đã lưu |
-   | `TZ` | `Asia/Ho_Chi_Minh` (timezone cho cron của worker) |
+   | `TZ` | `Asia/Ho_Chi_Minh` — áp dụng cho **cả web lẫn worker**: web tính `next_run_at` khi bạn save project, worker tính các lần tiếp theo. Thiếu TZ ở web → lần chạy đầu lệch 7 tiếng |
 
-4. Tab **Domains** → Add domain → `releases.<domain-của-bạn>.com`, container port `3000`, bật HTTPS — Traefik tự cấp Let's Encrypt. **Chỉ expose service `web`** (worker không có port).
+4. Tab **Domains** → Add domain → `releases.<domain-của-bạn>.com`, container port `3000`, bật HTTPS — Traefik tự cấp Let's Encrypt. **Chỉ expose service `web`** (worker không có port). Truy cập public luôn đi qua domain này — container `web` chỉ bind `127.0.0.1:3000` trên host để tránh bypass TLS qua `http://<VPS-IP>:3000`.
 5. **Deploy**. Lần đầu `worker` build ~5–15 phút (kéo Android SDK + Flutter + fastlane ~4GB image). Xem log build trong Dokploy nếu lâu.
 
 Volume `data` (named volume) persist DB + keystores + workspaces + Gradle cache — rebuild/deploy lại không mất dữ liệu.

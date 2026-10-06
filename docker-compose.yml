@@ -4,11 +4,14 @@ services:
       context: .
       dockerfile: Dockerfile.web
     ports:
-      - "3000:3000"
+      # localhost only — public access goes through Traefik/Dokploy (TLS) or Tailscale.
+      # Traefik reaches the container over the docker network, not this port binding.
+      - "127.0.0.1:3000:3000"
     environment:
       DATA_DIR: /data
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
       DASHBOARD_MASTER_KEY: ${DASHBOARD_MASTER_KEY}
+      TZ: ${TZ:-UTC}
     volumes:
       - data:/data
     restart: unless-stopped
