@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import fs from "fs";
 import path from "path";
-import { getDb } from "@/lib/db";
+import { getDb, Project } from "@/lib/db";
 import { encrypt } from "@/lib/crypto";
 import { isValidCron, nextRunAt, enqueueRun } from "@/lib/scheduler";
+import { sendTelegram, telegramConfigured } from "@/lib/notify";
 import { KEYSTORES_DIR, ensureDirs } from "@/lib/env";
 
 function str(fd: FormData, key: string): string {
@@ -77,6 +78,47 @@ export async function triggerRun(fd: FormData) {
   enqueueRun(projectId, "manual");
   revalidatePath(`/projects/${projectId}`);
   redirect(`/projects/${projectId}`);
+}
+
+export async function toggleSchedule(fd: FormData) {
+  const id = Number(str(fd, "project_id"));
+  const db = getDb();
+  const p = db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as
+    | Project
+    | undefined;
+  if (!p) throw new Error("project not found");
+  const enabled = p.schedule_enabled ? 0 : 1;
+  const next = enabled && p.schedule_cron ? nextRunAt(p.schedule_cron) : null;
+  db.prepare(
+    "UPDATE projects SET schedule_enabled = ?, next_run_at = ? WHERE id = ?"
+  ).run(enabled, next, id);
+  revalidatePath("/");
+  revalidatePath(`/projects/${id}`);
+}
+
+export async function saveTelegramConfig(fd: FormData) {
+  const db = getDb();
+  const upsert = (key: string, value: string) => {
+    if (!value) db.prepare("DELETE FROM secrets WHERE key = ?").run(key);
+    else
+      db.prepare(
+        "INSERT INTO secrets (key, value_enc) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value_enc = excluded.value_enc"
+      ).run(key, encrypt(value));
+  };
+  upsert("TELEGRAM_BOT_TOKEN", str(fd, "telegram_bot_token"));
+  upsert("TELEGRAM_CHAT_ID", str(fd, "telegram_chat_id"));
+  revalidatePath("/secrets");
+}
+
+export async function testTelegram() {
+  let ok = false;
+  if (telegramConfigured()) {
+    try {
+      await sendTelegram("✅ MRD: test notification — Telegram is wired up.");
+      ok = true;
+    } catch {}
+  }
+  redirect(`/secrets?tg=${ok ? "ok" : "fail"}`);
 }
 
 export async function saveGithubPat(fd: FormData) {

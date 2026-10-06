@@ -1,4 +1,21 @@
 import Link from "next/link";
+import cronstrue from "cronstrue";
+
+export function fmtDate(s: string | null | undefined): string {
+  if (!s) return "—";
+  const d = new Date(/Z|[+-]\d{2}:?\d{2}$/.test(s) ? s : s + "Z");
+  if (isNaN(d.getTime())) return s;
+  return d.toLocaleString("vi-VN", { timeZone: process.env.TZ || "UTC" });
+}
+
+export function cronHuman(expr: string | null | undefined): string | null {
+  if (!expr) return null;
+  try {
+    return cronstrue.toString(expr);
+  } catch {
+    return null;
+  }
+}
 
 const STATUS_STYLES: Record<string, string> = {
   queued: "bg-zinc-700 text-zinc-200",

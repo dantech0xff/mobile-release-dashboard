@@ -156,9 +156,14 @@ export default function ProjectForm({ project }: { project?: Project }) {
             defaultValue={p?.schedule_cron || ""}
             placeholder="0 9 * * 1"
           />
+          <p className="text-xs text-zinc-600">
+            <code>0 9 * * 1</code> = 09:00 every Monday, in the server&apos;s <code>TZ</code>.
+            Leave empty for manual runs only.
+          </p>
         </div>
         <label className="flex items-center gap-2 text-sm text-zinc-300 pb-2">
           <input
+            key={String(!!p?.schedule_enabled)}
             type="checkbox"
             name="schedule_enabled"
             defaultChecked={!!p?.schedule_enabled}
