@@ -2,8 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDb, Project, Run } from "@/lib/db";
 import ProjectForm from "../ProjectForm";
-import { triggerRun, deleteProject } from "../../actions";
-import { StatusBadge } from "../../ui";
+import { triggerRun, deleteProject, toggleSchedule } from "../../actions";
+import { StatusBadge, fmtDate, cronHuman } from "../../ui";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +30,26 @@ export default async function ProjectDetail({
           <h1 className="text-xl font-semibold">{project.name}</h1>
           <p className="text-sm text-zinc-500">
             {project.repo_url} · {project.branch} · {project.type}
+            {project.schedule_cron && (
+              <>
+                {" "}· {cronHuman(project.schedule_cron)} (
+                {project.schedule_cron}) · next run:{" "}
+                {project.schedule_enabled && project.next_run_at
+                  ? fmtDate(project.next_run_at)
+                  : "paused"}
+              </>
+            )}
           </p>
         </div>
         <div className="flex gap-2">
+          {project.schedule_cron && (
+            <form action={toggleSchedule}>
+              <input type="hidden" name="project_id" value={project.id} />
+              <button type="submit" className="btn-secondary">
+                {project.schedule_enabled ? "Pause schedule" : "Resume schedule"}
+              </button>
+            </form>
+          )}
           <form action={triggerRun}>
             <input type="hidden" name="project_id" value={project.id} />
             <button type="submit" className="btn">
@@ -79,9 +96,7 @@ export default async function ProjectDetail({
                   </td>
                   <td className="py-2 text-zinc-400">{r.stage || "—"}</td>
                   <td className="py-2 text-zinc-400">{r.version_after || "—"}</td>
-                  <td className="py-2 text-zinc-400">
-                    {r.started_at ? new Date(r.started_at + "Z").toLocaleString() : "—"}
-                  </td>
+                  <td className="py-2 text-zinc-400">{fmtDate(r.started_at)}</td>
                   <td className="py-2 text-red-400 max-w-xs truncate">{r.error || ""}</td>
                 </tr>
               ))}

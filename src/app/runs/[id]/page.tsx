@@ -2,7 +2,7 @@ import fs from "fs";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getDb, Run, Project } from "@/lib/db";
-import { StatusBadge } from "../../ui";
+import { StatusBadge, fmtDate } from "../../ui";
 import AutoRefresh from "./AutoRefresh";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +31,8 @@ export default async function RunDetail({ params }: { params: Promise<{ id: stri
           Run #{run.id} — {project?.name || run.project_id}
         </h1>
         <p className="text-sm text-zinc-500">
-          {run.trigger_type} · created {new Date(run.created_at + "Z").toLocaleString()}
+          {run.trigger_type} · created {fmtDate(run.created_at)} · finished{" "}
+          {fmtDate(run.finished_at)}
         </p>
       </div>
 

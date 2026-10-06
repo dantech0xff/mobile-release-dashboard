@@ -5,13 +5,22 @@ import {
   deleteSigningProfile,
   saveServiceAccount,
   deleteServiceAccount,
+  saveTelegramConfig,
+  testTelegram,
 } from "../actions";
+import { telegramConfigured } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
-export default function SecretsPage() {
+export default async function SecretsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const { tg } = await searchParams;
   const db = getDb();
   const patSet = !!db.prepare("SELECT key FROM secrets WHERE key = 'GITHUB_PAT'").get();
+  const tgSet = telegramConfigured();
   const profiles = db
     .prepare("SELECT * FROM signing_profiles ORDER BY id")
     .all() as SigningProfile[];
@@ -45,6 +54,51 @@ export default function SecretsPage() {
             Save
           </button>
         </form>
+      </section>
+
+      <section className="card space-y-3">
+        <h2 className="text-sm font-semibold">Notifications (Telegram)</h2>
+        <p className="text-xs text-zinc-500">
+          Worker sends a message after every run (success or failure). Create a bot via{" "}
+          <code>@BotFather</code> to get the token; get your chat id via <code>@userinfobot</code>{" "}
+          (or <code>api.telegram.org/bot&lt;token&gt;/getUpdates</code>). Status:{" "}
+          {tgSet ? (
+            <span className="text-emerald-400">configured</span>
+          ) : (
+            <span className="text-zinc-500">not set — no notifications</span>
+          )}
+          {tg === "ok" && <span className="text-emerald-400"> · test message sent</span>}
+          {tg === "fail" && (
+            <span className="text-red-400"> · test failed — check token/chat id</span>
+          )}
+        </p>
+        <form action={saveTelegramConfig} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="field">
+            <label>Bot token</label>
+            <input
+              type="password"
+              name="telegram_bot_token"
+              placeholder="123456:ABC-..."
+            />
+          </div>
+          <div className="field">
+            <label>Chat ID</label>
+            <input name="telegram_chat_id" placeholder="123456789" />
+          </div>
+          <div className="md:col-span-2 flex gap-2">
+            <button type="submit" className="btn-secondary">
+              Save
+            </button>
+          </div>
+        </form>
+        <form action={testTelegram}>
+          <button type="submit" className="btn-secondary" disabled={!tgSet}>
+            Send test message
+          </button>
+        </form>
+        <p className="text-xs text-zinc-600">
+          Blank fields clear the stored values. Token is encrypted at rest.
+        </p>
       </section>
 
       <section className="card space-y-3">

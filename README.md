@@ -31,8 +31,10 @@ Each run executes these stages (visible per-run on the dashboard):
 | `prepare` | Clone (or fetch + hard reset) the repo into `data/workspaces/<id>` |
 | `bump` | `versionCode` +1 and `versionName` per scheme in `app/build.gradle[.kts]` — or `version: x.y.z+build` in `pubspec.yaml` for Flutter |
 | `commit_push` | `chore(release): bump vX.Y.Z (N)` → push via GitHub PAT |
-| `build` | `./gradlew bundleRelease` (configurable task) or `flutter build appbundle` — signing injected via a Gradle init script, **no repo changes needed** |
+| `build` | `./gradlew bundleRelease` (configurable task) or `flutter pub get` + `flutter build appbundle` — signing injected via a Gradle init script, **no repo changes needed** |
 | `upload` | `fastlane supply` → chosen Play track with your service account |
+
+The recorded artifact is always the final `build/**/outputs/**` bundle — intermediate files like `intermediary-bundle.aab` are unsigned and skipped. `versionName` only bumps when it matches `x.y.z` (a non-semver name like `1.0` is left untouched while `versionCode`/build number still increments).
 
 ### Signing without touching your repo
 
@@ -75,6 +77,7 @@ npm run worker         # separate terminal — needs JDK/Android SDK/Flutter for
 1. **GitHub PAT** — `repo` scope, used for clone + push.
 2. **Signing profiles** — upload `.jks/.keystore` + alias + passwords.
 3. **Service accounts** — Google Play JSON key (Play Console → Setup → API access, grant release permission). The app must already exist on Play Console — first upload can't be automated.
+4. **Telegram notifications** — bot token (from `@BotFather`) + chat id (from `@userinfobot` or `getUpdates`). Once configured, the worker messages you after every run — success or failure — with project, version bump, duration, and error. A "Send test message" button verifies the setup.
 
 ### Per-project fields
 
@@ -90,8 +93,8 @@ npm run worker         # separate terminal — needs JDK/Android SDK/Flutter for
 
 ## Roadmap
 
-- **P1 (this)**: Android-Kotlin end-to-end + manual runs + logs
-- **P2**: Flutter Android + notifications (Telegram)
+- **P1**: Android-Kotlin end-to-end + manual runs + logs ✓
+- **P2 (this)**: Flutter Android (`pub get` + `appbundle`) + Telegram notifications + schedule pause/resume + human-readable cron + TZ-aware timestamps ✓
 - **P3**: iOS → TestFlight via `workflow_dispatch` to a `macos-latest` GitHub Actions job in each app repo (App Store Connect API key already accepted on the secrets page)
 
 ## Security notes

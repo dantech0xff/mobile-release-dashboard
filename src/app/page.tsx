@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getDb, Project, Run } from "@/lib/db";
-import { triggerRun } from "./actions";
-import { StatusBadge } from "./ui";
+import { triggerRun, toggleSchedule } from "./actions";
+import { StatusBadge, fmtDate, cronHuman } from "./ui";
 
 export const dynamic = "force-dynamic";
 
@@ -61,12 +61,20 @@ export default function Dashboard() {
                   </td>
                   <td className="py-2 text-zinc-400">{p.type}</td>
                   <td className="py-2 text-zinc-400">
-                    {p.schedule_enabled ? p.schedule_cron || "—" : "off"}
+                    {p.schedule_cron ? (
+                      <div>
+                        <span className="font-mono text-xs">{p.schedule_cron}</span>
+                        <div className="text-xs text-zinc-500">
+                          {cronHuman(p.schedule_cron)}
+                          {!p.schedule_enabled && " · paused"}
+                        </div>
+                      </div>
+                    ) : (
+                      "manual"
+                    )}
                   </td>
                   <td className="py-2 text-zinc-400">
-                    {p.schedule_enabled && p.next_run_at
-                      ? new Date(p.next_run_at).toLocaleString()
-                      : "—"}
+                    {p.schedule_enabled && p.next_run_at ? fmtDate(p.next_run_at) : "—"}
                   </td>
                   <td className="py-2">
                     {p.last_run_id ? (
@@ -78,12 +86,22 @@ export default function Dashboard() {
                     )}
                   </td>
                   <td className="py-2 text-right">
-                    <form action={triggerRun}>
-                      <input type="hidden" name="project_id" value={p.id} />
-                      <button className="btn-secondary" type="submit">
-                        Run now
-                      </button>
-                    </form>
+                    <div className="flex justify-end gap-2">
+                      {p.schedule_cron && (
+                        <form action={toggleSchedule}>
+                          <input type="hidden" name="project_id" value={p.id} />
+                          <button className="btn-secondary" type="submit">
+                            {p.schedule_enabled ? "Pause" : "Resume"}
+                          </button>
+                        </form>
+                      )}
+                      <form action={triggerRun}>
+                        <input type="hidden" name="project_id" value={p.id} />
+                        <button className="btn-secondary" type="submit">
+                          Run now
+                        </button>
+                      </form>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -124,9 +142,7 @@ export default function Dashboard() {
                   </td>
                   <td className="py-2 text-zinc-400">{r.stage || "—"}</td>
                   <td className="py-2 text-zinc-400">{r.version_after || "—"}</td>
-                  <td className="py-2 text-zinc-400">
-                    {r.finished_at ? new Date(r.finished_at + "Z").toLocaleString() : "—"}
-                  </td>
+                  <td className="py-2 text-zinc-400">{fmtDate(r.finished_at)}</td>
                 </tr>
               ))}
             </tbody>

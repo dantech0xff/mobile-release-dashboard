@@ -11,6 +11,7 @@ import {
   GRADLE_USER_HOME,
 } from "./env";
 import { bumpProject } from "./version";
+import { notifyRunFinished, telegramConfigured } from "./notify";
 
 type Logger = (line: string) => void;
 
@@ -80,7 +81,12 @@ function findArtifact(ws: string, glob: string | null): string | null {
     const hit = candidates.find((p) => p.includes(needle));
     if (hit) return hit;
   }
-  candidates.sort();
+  // Prefer final outputs (*/outputs/*) — intermediates like intermediary-bundle.aab are unsigned.
+  candidates.sort((a, b) => {
+    const ai = a.includes("/outputs/") ? 0 : 1;
+    const bi = b.includes("/outputs/") ? 0 : 1;
+    return ai - bi || a.localeCompare(b);
+  });
   return candidates[0] || null;
 }
 
@@ -214,6 +220,7 @@ export async function executeRun(runId: number): Promise<void> {
     }
 
     if (project.type === "flutter") {
+      await runCmd(log, "flutter", ["pub", "get"], { cwd: ws, env: buildEnv });
       await runCmd(log, "flutter", ["build", "appbundle", "--release"], {
         cwd: ws,
         env: buildEnv,
@@ -281,5 +288,15 @@ export async function executeRun(runId: number): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     log(`FAILED: ${msg}`);
     finish("failed", msg);
+  } finally {
+    // Best-effort notification — a Telegram hiccup must never mark the run.
+    try {
+      if (telegramConfigured()) {
+        await notifyRunFinished(runId);
+        log("telegram: notified");
+      }
+    } catch (e) {
+      log(`telegram notify failed: ${e instanceof Error ? e.message : e}`);
+    }
   }
 }
